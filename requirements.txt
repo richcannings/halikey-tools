@@ -1,0 +1,4 @@
+argparse
+pyserial
+sounddevice
+numpy
