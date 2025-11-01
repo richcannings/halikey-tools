@@ -1,6 +1,6 @@
 # HaliKey Oscillator
 
-Low-latency iambic keyer software for the HaliKey v1.4 USB paddle interface. Practice CW with a sidetone or send CW over wfview using a virtual audio cable.
+Low-latency iambic keyer software for the HaliKey USB paddle interface. Practice CW with a sidetone or send CW over USB/LSB with [wfview](https://wfview.org/) using a virtual audio cable.
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ python halikey-oscillator.py --wpm 18 --mode A
 
 **Send CW over wfview (requires VB-Cable or similar):**
 ```bash
-python halikey-oscillator.py --wpm 18 --mode A --output VB-Cable
+python halikey-oscillator.py --wpm 18 --mode B --output VB-Cable
 ```
 
 ## Command Line Options
@@ -30,9 +30,11 @@ python halikey-oscillator.py --wpm 18 --mode A --output VB-Cable
 |--------|-------------|---------|
 | `--port PORT` | Serial port for HaliKey | `/dev/cu.usbserial-DK0E4EEM` |
 | `--wpm SPEED` | CW speed in words per minute | `18` |
+| `--tone FREQ` | Tone frequency in Hz | `575` |
 | `--mode A\|B` | Keyer mode (A or B) | `B` |
 | `--output DEVICE` | Clean CW output device name | None |
 | `--list-devices` | List available audio devices | - |
+| `--verbose` | Enable latency measurements | Off |
 
 ## Keyer Modes
 
@@ -42,11 +44,13 @@ python halikey-oscillator.py --wpm 18 --mode A --output VB-Cable
 ## Audio Outputs
 
 ### Sidetone (Default Audio Device)
-- 575 Hz tone with smooth attack/release envelope
+- Default 575 Hz tone (configurable with `--tone`)
+- Smooth attack/release envelope
 - Goes to your default speakers/headphones
 - Pleasant for practice
 
 ### Clean CW Output (Optional)
+- Same frequency as sidetone
 - Instant on/off without envelope
 - Specify device with `--output`
 - Perfect for feeding into wfview or logging software
@@ -72,13 +76,40 @@ python halikey-oscillator.py --wpm 18 --mode A --output VB-Cable
 
 5. Key away! Your CW will be transmitted through wfview
 
+## Verbose Mode & Latency Measurements
+
+Enable `--verbose` mode to see detailed debug output and latency measurements:
+
+```bash
+python halikey-oscillator.py --wpm 18 --mode A --verbose
+```
+
+**Verbose mode provides:**
+- **Debug messages**: Shows each dit, dah, and state transition in real-time
+- **Latency measurements**: Reports every 20 paddle events during operation
+- **Exit statistics**: Displays overall latency summary when quitting
+
+**Latency metrics include:**
+- **Average latency**: Mean time from paddle detection to audio generation
+- **Min latency**: Best-case latency observed
+- **Max latency**: Worst-case latency observed
+- **Total events**: Number of paddle events measured
+
+**Note**: These measurements show the software processing time only (typically 0.01-0.1ms). Total perceived latency also includes:
+- Serial port polling delays (~1-5ms)
+- Audio buffer latency (configured for low latency)
+- OS audio stack delays (~5-20ms)
+
+Typical total system latency: 10-30ms
+
 ## Tips
 
 - Use **Mode A** for most operating (cleaner, more predictable)
 - Use **Mode B** if you prefer the "squeeze" completion element
 - Lower WPM (12-15) for learning, higher (20-30) for QSOs
 - The sidetone always plays through your default audio device for monitoring
-- Press `Ctrl+C` to exit
+- Use `--verbose` to monitor system performance and latency
+- Press **'q'** to quit (or Ctrl+C)
 
 ## Requirements
 

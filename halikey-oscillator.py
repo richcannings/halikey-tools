@@ -2,7 +2,7 @@
 """
 halikey_oscillator.py
 ---------------------
-Generates a 575 Hz sidetone from a HaliKey v1.4 iambic keyer.
+A keyer that generates a sidetone and a clean oscillator from a HaliKey USB paddle interface.
 Supports both Iambic A and Iambic B modes.
 Optionally outputs clean CW to a second audio device (e.g., VB-Cable).
 
@@ -13,12 +13,19 @@ Usage:
     # With clean CW output to VB-Cable
     python3 halikey_oscillator.py --wpm 18 --mode A --output VB-Cable
     
+    # Custom tone frequency
+    python3 halikey_oscillator.py --wpm 20 --tone 700 --output VB-Cable
+    
     # List available audio devices
     python3 halikey_oscillator.py --list-devices
+    
+    # Enable verbose mode with latency measurements
+    python3 halikey_oscillator.py --wpm 18 --mode A --verbose
 
 Defaults:
     --port /dev/cu.usbserial-DK0E4EEM
     --wpm 18
+    --tone 575
     --mode B
     --output None (no clean output)
 
@@ -37,6 +44,10 @@ Dependencies:
 import argparse
 import time
 import math
+import sys
+import select
+import termios
+import tty
 import numpy as np
 import sounddevice as sd
 import serial
@@ -48,7 +59,7 @@ DEFAULT_PORT = "/dev/cu.usbserial-DK0E4EEM"
 DEFAULT_WPM = 18
 DEFAULT_MODE = "B"  # Iambic mode: A or B
 DEFAULT_OUTPUT_DEVICE = "VB-Cable"  # Default clean output device
-TONE_FREQ = 575.0
+DEFAULT_TONE_FREQ = 575  # Hz
 SAMPLE_RATE = 48000
 ATTACK = 0.002  # For sidetone envelope
 RELEASE = 0.003  # For sidetone envelope
@@ -128,9 +139,36 @@ class CleanCWGenerator:
         
         return output
 
+# ------------------- Keyboard Input Helper -------------------
+
+def setup_terminal():
+    """Setup terminal for non-blocking keyboard input"""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    tty.setraw(fd)
+    return old_settings
+
+def restore_terminal(old_settings):
+    """Restore terminal to original settings"""
+    fd = sys.stdin.fileno()
+    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+def check_quit_key():
+    """Check if 'q' key has been pressed (non-blocking)"""
+    if select.select([sys.stdin], [], [], 0)[0]:
+        ch = sys.stdin.read(1)
+        if ch.lower() == 'q':
+            return True
+    return False
+
+def print_raw(msg):
+    """Print with proper line endings for raw terminal mode"""
+    sys.stdout.write(msg.replace('\n', '\r\n') + '\r\n')
+    sys.stdout.flush()
+
 # ------------------- HaliKey Serial Reader -------------------
 
-def run_halikey(port, wpm, mode, output_device=None):
+def run_halikey(port, wpm, mode, tone_freq, output_device=None, verbose=False):
     try:
         ser = serial.Serial(port, 115200, timeout=0.001)
         print(f"[INFO] Connected to {ser.port}")
@@ -154,9 +192,12 @@ def run_halikey(port, wpm, mode, output_device=None):
     
     print(f"[INFO] WPM={wpm}  Dit={dit:.3f}s  Dah={dah:.3f}s")
     print(f"[INFO] Mode: Iambic {mode}")
+    print(f"[INFO] Tone: {tone_freq} Hz")
+    if verbose:
+        print(f"[INFO] Verbose mode: Latency measurements enabled")
 
     # Create audio generators
-    sidetone_gen = CWGenerator(TONE_FREQ, SAMPLE_RATE, ATTACK, RELEASE, GAIN)
+    sidetone_gen = CWGenerator(tone_freq, SAMPLE_RATE, ATTACK, RELEASE, GAIN)
     
     # Sidetone audio callback
     def sidetone_callback(outdata, frames, time_info, status):
@@ -190,7 +231,7 @@ def run_halikey(port, wpm, mode, output_device=None):
                     break
             
             if device_id is not None:
-                clean_gen = CleanCWGenerator(TONE_FREQ, SAMPLE_RATE, GAIN)
+                clean_gen = CleanCWGenerator(tone_freq, SAMPLE_RATE, GAIN)
                 
                 def clean_callback(outdata, frames, time_info, status):
                     if status:
@@ -215,7 +256,7 @@ def run_halikey(port, wpm, mode, output_device=None):
         except Exception as e:
             print(f"[WARN] Could not setup clean output: {e}")
     
-    print(f"[INFO] Iambic {mode} keyer active... Ctrl+C to quit.\n")
+    print(f"[INFO] Iambic {mode} keyer active... Press 'q' to quit.\n")
 
     # Keyer state machine
     IDLE, DIT, DAH, DIT_WAIT, DAH_WAIT = 0, 1, 2, 3, 4
@@ -226,39 +267,101 @@ def run_halikey(port, wpm, mode, output_device=None):
     iambic_latch = False
     element_start_time = 0
     
+    # Latency tracking for verbose mode
+    latency_samples = []
+    latency_count = 0
+    LATENCY_REPORT_INTERVAL = 20  # Report every N paddle events
+    
     def read_paddles():
         """Read paddle states: CTS=dit, DCD=dah"""
         return ser.cts, ser.cd
     
+    # Setup terminal for keyboard input
+    old_terminal_settings = setup_terminal()
+    
     try:
         while True:
+            # Check for quit key
+            if check_quit_key():
+                print_raw("")
+                print_raw("[INFO] 'q' pressed, exiting...")
+                
+                # Print overall latency statistics if verbose mode was enabled
+                if verbose and latency_samples:
+                    print_raw("")
+                    print_raw("=== Latency Statistics ===")
+                    avg_latency = sum(latency_samples) / len(latency_samples)
+                    min_latency = min(latency_samples)
+                    max_latency = max(latency_samples)
+                    print_raw(f"Total events: {len(latency_samples)}")
+                    print_raw(f"Average latency: {avg_latency:.3f}ms")
+                    print_raw(f"Min latency: {min_latency:.3f}ms")
+                    print_raw(f"Max latency: {max_latency:.3f}ms")
+                    print_raw("")
+                
+                break
+            
             dit_paddle, dah_paddle = read_paddles()
             current_time = time.perf_counter()  # High-resolution timer
+            
+            # Report latency statistics periodically
+            if verbose and latency_count > 0 and latency_count % LATENCY_REPORT_INTERVAL == 0:
+                avg_latency = sum(latency_samples[-LATENCY_REPORT_INTERVAL:]) / LATENCY_REPORT_INTERVAL
+                min_latency = min(latency_samples[-LATENCY_REPORT_INTERVAL:])
+                max_latency = max(latency_samples[-LATENCY_REPORT_INTERVAL:])
+                print_raw(f"[LATENCY] Last {LATENCY_REPORT_INTERVAL} events: avg={avg_latency:.3f}ms, min={min_latency:.3f}ms, max={max_latency:.3f}ms")
             
             # State machine
             if state == IDLE:
                 # Not sending anything, check for paddle input
                 if dit_paddle and dah_paddle:
+                    paddle_detect_time = time.perf_counter()
                     sidetone_gen.set_keyed(True)
                     if clean_gen:
                         clean_gen.set_keyed(True)
+                    audio_keyed_time = time.perf_counter()
+                    
+                    if verbose:
+                        latency_ms = (audio_keyed_time - paddle_detect_time) * 1000
+                        latency_samples.append(latency_ms)
+                        latency_count += 1
+                    
                     state = DIT
                     element_start_time = current_time
-                    print("[DEBUG] Squeeze: Dit")
+                    if verbose:
+                        print_raw("[DEBUG] Squeeze: Dit")
                 elif dit_paddle:
+                    paddle_detect_time = time.perf_counter()
                     sidetone_gen.set_keyed(True)
                     if clean_gen:
                         clean_gen.set_keyed(True)
+                    audio_keyed_time = time.perf_counter()
+                    
+                    if verbose:
+                        latency_ms = (audio_keyed_time - paddle_detect_time) * 1000
+                        latency_samples.append(latency_ms)
+                        latency_count += 1
+                    
                     state = DIT
                     element_start_time = current_time
-                    print("[DEBUG] Dit")
+                    if verbose:
+                        print_raw("[DEBUG] Dit")
                 elif dah_paddle:
+                    paddle_detect_time = time.perf_counter()
                     sidetone_gen.set_keyed(True)
                     if clean_gen:
                         clean_gen.set_keyed(True)
+                    audio_keyed_time = time.perf_counter()
+                    
+                    if verbose:
+                        latency_ms = (audio_keyed_time - paddle_detect_time) * 1000
+                        latency_samples.append(latency_ms)
+                        latency_count += 1
+                    
                     state = DAH
                     element_start_time = current_time
-                    print("[DEBUG] Dah")
+                    if verbose:
+                        print_raw("[DEBUG] Dah")
                 else:
                     time.sleep(0.0001)
                     
@@ -303,10 +406,12 @@ def run_halikey(port, wpm, mode, output_device=None):
                         element_start_time = current_time
                         if mode == 'B' and dit_paddle and dah_paddle and not iambic_latch:
                             iambic_latch = True
-                            print("[DEBUG] Dah (latched, iambic B armed)")
+                            if verbose:
+                                print_raw("[DEBUG] Dah (latched, iambic B armed)")
                         else:
                             iambic_latch = False
-                            print("[DEBUG] Dah (latched)")
+                            if verbose:
+                                print_raw("[DEBUG] Dah (latched)")
                     elif iambic_latch and not dit_paddle and not dah_paddle:
                         iambic_latch = False
                         sidetone_gen.set_keyed(True)
@@ -314,7 +419,8 @@ def run_halikey(port, wpm, mode, output_device=None):
                             clean_gen.set_keyed(True)
                         state = DAH
                         element_start_time = current_time
-                        print("[DEBUG] Dah (iambic B completion)")
+                        if verbose:
+                            print_raw("[DEBUG] Dah (iambic B completion)")
                     elif iambic_latch:
                         iambic_latch = False
                         if dit_paddle:
@@ -323,28 +429,32 @@ def run_halikey(port, wpm, mode, output_device=None):
                             clean_gen.set_keyed(True)
                             state = DIT
                             element_start_time = current_time
-                            print("[DEBUG] Dit (continued, iambic B cleared)")
+                            if verbose:
+                                print_raw("[DEBUG] Dit (continued, iambic B cleared)")
                         elif dah_paddle:
                             sidetone_gen.set_keyed(True)
                         if clean_gen:
                             clean_gen.set_keyed(True)
                             state = DAH
                             element_start_time = current_time
-                            print("[DEBUG] Dah (iambic B cleared)")
+                            if verbose:
+                                print_raw("[DEBUG] Dah (iambic B cleared)")
                     elif dit_paddle:
                         sidetone_gen.set_keyed(True)
                         if clean_gen:
                             clean_gen.set_keyed(True)
                         state = DIT
                         element_start_time = current_time
-                        print("[DEBUG] Dit (continued)")
+                        if verbose:
+                            print_raw("[DEBUG] Dit (continued)")
                     elif dah_paddle:
                         sidetone_gen.set_keyed(True)
                         if clean_gen:
                             clean_gen.set_keyed(True)
                         state = DAH
                         element_start_time = current_time
-                        print("[DEBUG] Dah")
+                        if verbose:
+                            print_raw("[DEBUG] Dah")
                     else:
                         state = IDLE
                         dit_latch = False
@@ -366,10 +476,12 @@ def run_halikey(port, wpm, mode, output_device=None):
                         element_start_time = current_time
                         if mode == 'B' and dit_paddle and dah_paddle and not iambic_latch:
                             iambic_latch = True
-                            print("[DEBUG] Dit (latched, iambic B armed)")
+                            if verbose:
+                                print_raw("[DEBUG] Dit (latched, iambic B armed)")
                         else:
                             iambic_latch = False
-                            print("[DEBUG] Dit (latched)")
+                            if verbose:
+                                print_raw("[DEBUG] Dit (latched)")
                     elif iambic_latch and not dit_paddle and not dah_paddle:
                         iambic_latch = False
                         sidetone_gen.set_keyed(True)
@@ -377,7 +489,8 @@ def run_halikey(port, wpm, mode, output_device=None):
                             clean_gen.set_keyed(True)
                         state = DIT
                         element_start_time = current_time
-                        print("[DEBUG] Dit (iambic B completion)")
+                        if verbose:
+                            print_raw("[DEBUG] Dit (iambic B completion)")
                     elif iambic_latch:
                         iambic_latch = False
                         if dah_paddle:
@@ -386,28 +499,32 @@ def run_halikey(port, wpm, mode, output_device=None):
                             clean_gen.set_keyed(True)
                             state = DAH
                             element_start_time = current_time
-                            print("[DEBUG] Dah (continued, iambic B cleared)")
+                            if verbose:
+                                print_raw("[DEBUG] Dah (continued, iambic B cleared)")
                         elif dit_paddle:
                             sidetone_gen.set_keyed(True)
                         if clean_gen:
                             clean_gen.set_keyed(True)
                             state = DIT
                             element_start_time = current_time
-                            print("[DEBUG] Dit (iambic B cleared)")
+                            if verbose:
+                                print_raw("[DEBUG] Dit (iambic B cleared)")
                     elif dah_paddle:
                         sidetone_gen.set_keyed(True)
                         if clean_gen:
                             clean_gen.set_keyed(True)
                         state = DAH
                         element_start_time = current_time
-                        print("[DEBUG] Dah (continued)")
+                        if verbose:
+                            print_raw("[DEBUG] Dah (continued)")
                     elif dit_paddle:
                         sidetone_gen.set_keyed(True)
                         if clean_gen:
                             clean_gen.set_keyed(True)
                         state = DIT
                         element_start_time = current_time
-                        print("[DEBUG] Dit")
+                        if verbose:
+                            print_raw("[DEBUG] Dit")
                     else:
                         state = IDLE
                         dit_latch = False
@@ -417,8 +534,24 @@ def run_halikey(port, wpm, mode, output_device=None):
                     time.sleep(0.0001)
             
     except KeyboardInterrupt:
-        print("\n[INFO] Exiting...")
+        print_raw("[INFO] Ctrl+C pressed, exiting...")
     finally:
+        # Print overall latency statistics if verbose mode was enabled
+        if verbose and latency_samples:
+            print_raw("")
+            print_raw("=== Latency Statistics ===")
+            avg_latency = sum(latency_samples) / len(latency_samples)
+            min_latency = min(latency_samples)
+            max_latency = max(latency_samples)
+            print_raw(f"Total events: {len(latency_samples)}")
+            print_raw(f"Average latency: {avg_latency:.3f}ms")
+            print_raw(f"Min latency: {min_latency:.3f}ms")
+            print_raw(f"Max latency: {max_latency:.3f}ms")
+            print_raw("")
+        
+        # Restore terminal settings
+        restore_terminal(old_terminal_settings)
+        # Clean up audio streams
         sidetone_stream.stop()
         sidetone_stream.close()
         if clean_stream:
@@ -432,12 +565,15 @@ def main():
     parser = argparse.ArgumentParser(description="HaliKey v1.4 CW Sidetone Generator - Iambic Keyer")
     parser.add_argument("--port", type=str, default=DEFAULT_PORT, help="Serial port for HaliKey")
     parser.add_argument("--wpm", type=int, default=DEFAULT_WPM, help="CW speed in WPM")
+    parser.add_argument("--tone", type=int, default=DEFAULT_TONE_FREQ, help="Tone frequency in Hz")
     parser.add_argument("--mode", type=str, default=DEFAULT_MODE, choices=['A', 'B', 'a', 'b'], 
                         help="Keyer mode: A (iambic A) or B (iambic B, default)")
     parser.add_argument("--output", type=str, default=None, 
                         help=f"Clean CW output device name (default: None, use '{DEFAULT_OUTPUT_DEVICE}' for VB-Cable)")
     parser.add_argument("--list-devices", action="store_true", 
                         help="List available audio output devices and exit")
+    parser.add_argument("--verbose", action="store_true",
+                        help="Enable verbose mode with latency measurements")
     args = parser.parse_args()
 
     if args.list_devices:
@@ -449,7 +585,7 @@ def main():
                 print(f"  [{i}] {dev['name']}{default}")
         return
 
-    run_halikey(args.port, args.wpm, args.mode, args.output)
+    run_halikey(args.port, args.wpm, args.mode, args.tone, args.output, args.verbose)
 
 if __name__ == "__main__":
     main()
