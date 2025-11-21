@@ -2,3 +2,4 @@ argparse
 pyserial
 sounddevice
 numpy
+pynput
