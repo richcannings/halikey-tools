@@ -22,8 +22,7 @@ pip install -r requirements.txt
 ```
 
 ### VBand Emulator Usage
-
-The `halikey-vband.py` tool allows you to use your HaliKey paddle interface with the [Ham Radio Solutions VBand](https://hamradio.solutions/vband/) virtual CW band website and other supporting the vband protocol.
+The `halikey-vband.py` tool allows you to use your HaliKey paddle interface with the Ham Radio Solutions VBand virtual CW band website and other supporting the vband protocol.
 
 **Usage:**
 ```bash
@@ -33,6 +32,7 @@ python halikey-vband.py --port /dev/cu.usbserial-[your port]
 Visit [hamradio.solutions/vband](https://hamradio.solutions/vband/) to select a channel and practice CW with other operators over the internet.
 
 ### Oscillator Usage
+Yes, this is a hack and inspired by a comment from W6EL in the [WFView Forums](https://forum.wfview.org/t/handling-cw/347/48).
 
 **Practice mode (sidetone only):**
 ```bash
