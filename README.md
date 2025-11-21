@@ -1,6 +1,15 @@
-# HaliKey Oscillator
+# HaliKey Tools
 
-Low-latency iambic keyer software for the HaliKey USB paddle interface. Practice CW with a sidetone or send CW over USB/LSB with [wfview](https://wfview.org/) using a virtual audio cable.
+Low-latency tools for the [HaliKey USB paddle interface](https://electronics.halibut.com/product/halikey/). For use with Ham Radio Solutions VBand, DiDahDit, WFView, GGMorse, and more.
+
+This repository contains two applications:
+
+1. **halikey-oscillator.py** - Low-latency iambic keyer with sidetone
+    * Send relatively clean CW over USB/LSB with [wfview](https://wfview.org/) using a virtual audio cable
+    * Practice CW standalone with the sidetone or with [GGMorse](https://github.com/ggerganov/ggmorse) ggmorse-gui to decode
+
+2. **halikey-vband.py** - Emulates the [Ham Radio Solutions VBand](https://hamradio.solutions/vband/) adapter 
+    * Connect your paddle to the VBand website or other supported apps, like [DiDahDit](didahdit.com), for virtual CW practice over the internet
 
 ## Quick Start
 
@@ -12,29 +21,42 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Basic Usage
+### VBand Emulator Usage
+
+The `halikey-vband.py` tool allows you to use your HaliKey paddle interface with the [Ham Radio Solutions VBand](https://hamradio.solutions/vband/) virtual CW band website and other supporting the vband protocol.
+
+**Usage:**
+```bash
+python halikey-vband.py --port /dev/cu.usbserial-[your port]
+```
+
+Visit [hamradio.solutions/vband](https://hamradio.solutions/vband/) to select a channel and practice CW with other operators over the internet.
+
+### Oscillator Usage
 
 **Practice mode (sidetone only):**
 ```bash
-python halikey-oscillator.py --wpm 18 --mode A
+python halikey-oscillator.py --wpm 18 --port /dev/cu.usbserial-[your port]
 ```
 
 **Send CW over wfview (requires VB-Cable or similar):**
 ```bash
-python halikey-oscillator.py --wpm 18 --mode B --output VB-Cable
+python halikey-oscillator.py --wpm 18 --output VB-Cable --port /dev/cu.usbserial-[your port]
 ```
 
 ## Command Line Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `--port PORT` | Serial port for HaliKey | `/dev/cu.usbserial-DK0E4EEM` |
+| `--port PORT` | Serial port for HaliKey | `/dev/cu.usbserial-DK0E4012` |
 | `--wpm SPEED` | CW speed in words per minute | `18` |
 | `--tone FREQ` | Tone frequency in Hz | `575` |
 | `--mode A\|B` | Keyer mode (A or B) | `B` |
 | `--output DEVICE` | Clean CW output device name | None |
 | `--list-devices` | List available audio devices | - |
 | `--verbose` | Enable latency measurements | Off |
+
+## Addition Oscillator Information 
 
 ## Keyer Modes
 
@@ -55,7 +77,7 @@ python halikey-oscillator.py --wpm 18 --mode B --output VB-Cable
 - Specify device with `--output`
 - Perfect for feeding into wfview or logging software
 
-## Setup for wfview
+### Setup for wfview
 
 1. Install a virtual audio cable:
    - **macOS**: BlackHole or VB-Cable
@@ -76,7 +98,7 @@ python halikey-oscillator.py --wpm 18 --mode B --output VB-Cable
 
 5. Key away! Your CW will be transmitted through wfview
 
-## Verbose Mode & Latency Measurements
+### Verbose Mode & Latency Measurements
 
 Enable `--verbose` mode to see detailed debug output and latency measurements:
 
@@ -102,7 +124,7 @@ python halikey-oscillator.py --wpm 18 --mode A --verbose
 
 Typical total system latency: 10-30ms
 
-## Tips
+### Tips
 
 - Use **Mode A** for most operating (cleaner, more predictable)
 - Use **Mode B** if you prefer the "squeeze" completion element
@@ -124,4 +146,3 @@ The HaliKey uses serial port control signals (CTS/DCD) for paddle detection, not
 ## License
 
 See LICENSE file for details.
-
