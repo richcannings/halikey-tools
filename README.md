@@ -56,28 +56,28 @@ python halikey-oscillator.py --wpm 18 --output VB-Cable --port /dev/cu.usbserial
 | `--list-devices` | List available audio devices | - |
 | `--verbose` | Enable latency measurements | Off |
 
-## Addition Oscillator Information 
+## Additional Oscillator Information 
 
-## Keyer Modes
+### Keyer Modes
 
 - **Mode A (Iambic A)**: Clean alternation, no completion element
 - **Mode B (Iambic B)**: Adds completion element when both paddles released during squeeze
 
-## Audio Outputs
+### Audio Outputs
 
-### Sidetone (Default Audio Device)
+#### Sidetone (Default Audio Device)
 - Default 575 Hz tone (configurable with `--tone`)
 - Smooth attack/release envelope
 - Goes to your default speakers/headphones
 - Pleasant for practice
 
-### Clean CW Output (Optional)
+#### Clean CW Output (Optional)
 - Same frequency as sidetone
 - Instant on/off without envelope
 - Specify device with `--output`
 - Perfect for feeding into wfview or logging software
 
-### Setup for wfview
+#### Setup for wfview
 
 1. Install a virtual audio cable:
    - **macOS**: BlackHole or VB-Cable

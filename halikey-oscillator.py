@@ -8,7 +8,7 @@ Optionally outputs clean CW to a second audio device (e.g., VB-Cable).
 
 Usage:
     # Basic usage (sidetone only)
-    python3 halikey_oscillator.py --port /dev/cu.usbserial-DK0E4EEM --wpm 18 --mode B
+    python3 halikey_oscillator.py --port /dev/cu.usbserial-DK0E4012 --wpm 18 --mode B
     
     # With clean CW output to VB-Cable
     python3 halikey_oscillator.py --wpm 18 --mode A --output VB-Cable
@@ -23,7 +23,7 @@ Usage:
     python3 halikey_oscillator.py --wpm 18 --mode A --verbose
 
 Defaults:
-    --port /dev/cu.usbserial-DK0E4EEM
+    --port /dev/cu.usbserial-DK0E4012
     --wpm 18
     --tone 575
     --mode B
@@ -55,7 +55,7 @@ import serial.tools.list_ports
 
 # ------------------- Configuration -------------------
 
-DEFAULT_PORT = "/dev/cu.usbserial-DK0E4EEM"
+DEFAULT_PORT = "/dev/cu.usbserial-DK0E4012"
 DEFAULT_WPM = 18
 DEFAULT_MODE = "B"  # Iambic mode: A or B
 DEFAULT_OUTPUT_DEVICE = "VB-Cable"  # Default clean output device
